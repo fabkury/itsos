@@ -134,11 +134,11 @@ order by a.`", name, "`)
 union all
 (select 'All' as `", name, "`, round(NOfHospitals*100/NInStratum, 2) as `", year, "`
   from (select count(*) as NOfHospitals
-  from (select distinct a.HAEntityId from AutoIdentification a, HAEntity b
-  where a.Type='", type, "' and InUseFlag = -1 and DepartmentName = 'Laboratory' and a.HAEntityId=b.HAEntityId)) a,
+    from (select distinct HAEntityId from AutoIdentification
+    where Type='", type, "' and InUseFlag = -1 and DepartmentName = 'Laboratory')) a,
 (select count(*) as NInStratum
-  from (select distinct a.HAEntityId from AutoIdentification a, HAEntity b
-  where a.Type='", type, "' and DepartmentName = 'Laboratory' and a.HAEntityId=b.HAEntityId)) b);"))
+  from (select distinct HAEntityId from AutoIdentification
+  where Type='", type, "' and InUseFlag is not null and DepartmentName = 'Laboratory')) b);"))
 	    close(mdb)
 	    if(class(data) == "character") {
           warning(paste0("Unable to calculate year ", year, "."))
@@ -150,6 +150,34 @@ union all
 	    col.names=TRUE, row.names=FALSE, append=TRUE, showNA=FALSE)
     }
   }
+}
+
+
+make.medadministration <- function(years=c(2008,2009,2010,2011,2012)) {
+  ret <- data.frame()
+  for(year in years) {
+    mdb <- get.mdb(year)
+    dat <- sqlQuery(mdb,
+"select count(*) as TotalN
+FROM
+	(select distinct HAEntityId from MedAdministration)")
+    total_n <- dat$TotalN[1]
+    dat <- sqlQuery(mdb, paste0(
+"SELECT ProcessName, count(*) as N
+FROM MedAdministration
+GROUP BY ProcessName"))
+    if(length(dat) == 0) {
+      warning(paste0("Unable to calculate year ", year, "."))
+      next
+    }
+    close(mdb)
+    dat <- cbind(dat, TotalN=total_n)
+    dat <- mutate(dat, PercentN=round((N/total_n)*100, 2))
+    dat <- cbind(dat, Year=year)
+    dat <- cbind(Type='Medication Administration', dat)
+    ret <- rbind(ret, dat)
+  }
+  ret
 }
 
 
@@ -349,6 +377,8 @@ load.libraries(c('RODBC', 'plyr', 'xlsx'))
 message("Processing...")
 guarantee.output.dir()
 message(paste0("Output directory: ", output_dir))
+
+View(make.medadministration())
 
 make.AutoIdentification.Names(years_to_analyze, AutoIdentification_types, standard_names, standard_switches)
 make.MedAdministration.Names(years_to_analyze, standard_names, standard_switches)
